@@ -1,0 +1,45 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+- group: terraform-vars  # Optional: Store secrets here
+
+steps:
+- task: TerraformInstaller@0
+  inputs:
+    terraformVersion: '1.7.0'
+
+- script: |
+    terraform init \
+      -backend-config="resource_group_name=rg-tfstate" \
+      -backend-config="storage_account_name=$(STORAGE_ACCOUNT_NAME)" \
+      -backend-config="container_name=tfstate" \
+      -backend-config="key=$(TFSTATE_KEY)"
+  displayName: 'Terraform Init'
+  env:
+    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+    ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+    ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+    ARM_TENANT_ID: $(ARM_TENANT_ID)
+    STORAGE_ACCOUNT_NAME: $(STORAGE_ACCOUNT_NAME)
+    TFSTATE_KEY: $(TFSTATE_KEY)
+
+- script: |
+    terraform plan -out=tfplan -var="environment=$(ENVIRONMENT)" -var="location=$(LOCATION)"
+  displayName: 'Terraform Plan'
+  env:
+    ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+    # ... other env vars
+
+- task: TerraformTaskV4@4
+  inputs:
+    provider: 'azurerm'
+    command: 'apply'
+    environmentServiceNameAzureRM: '$(AZURE_SERVICE_CONNECTION)'
+    tfPlanFile: 'tfplan'
+    commandOptions: '-var="environment=$(ENVIRONMENT)"'
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  displayName: 'Terraform Apply'
